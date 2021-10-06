@@ -167,6 +167,7 @@ def training_loop(
     output_dir,
     testing_data=None,
     epochs = None,
+    model_restore_priority = "best",
 ):
     """
     The main training loop.
@@ -179,6 +180,7 @@ def training_loop(
         output_dir (str): The output directory.
         testing_data (pandas.DataFrame): The data to use for testing.
         epochs (int): The number of epochs to train; if None, take from params.
+        model_restore_priority (str): The type of model to restore; can be either 'best' or 'recent'.
     """
     # Some autodetermined factors
     if epochs is None:
@@ -321,22 +323,41 @@ def training_loop(
     best_loss = 1e7
     patience, start_epoch = 0, 0
     first_model_saved = False
+
+    # set up the model name(s) to search for during restore
+    model_restore_tags = ["best", "recent"]
+    if model_restore_priority not in model_restore_tags:
+        model_restore_priority = "best"
+    model_restore_tags.remove(model_restore_priority)
+
     best_model_path = os.path.join(
         output_dir, params["model"]["architecture"] + "_best.pth.tar"
     )
 
-    # if previous model file is present, load it up
-    if os.path.exists(best_model_path):
-        print("Previous model found. Loading it up.")
-        try:
-            main_dict = torch.load(best_model_path)
-            model.load_state_dict(main_dict["model_state_dict"])
-            start_epoch = main_dict["epoch"]
-            optimizer.load_state_dict(main_dict["optimizer_state_dict"])
-            best_loss = main_dict["best_loss"]
-            print("Previous model loaded successfully.")
-        except Exception as e:
-            print("Previous model could not be loaded, error: ", e)
+    all_model_paths = [os.path.join(
+        output_dir, params["model"]["architecture"] + "_" + model_restore_priority + ".pth.tar"
+    )
+    ]
+    for model_restore_tag in model_restore_tags:
+        all_model_paths.append(
+            os.path.join(
+            output_dir, params["model"]["architecture"] + "_" + model_restore_tag + ".pth.tar"
+        )
+        )
+
+    for model_path in all_model_paths:
+        # if previous model file is present, load it up
+        if os.path.exists(model_path):
+            print("Previous model found. Loading it up.")
+            try:
+                main_dict = torch.load(model_path)
+                model.load_state_dict(main_dict["model_state_dict"])
+                start_epoch = main_dict["epoch"]
+                optimizer.load_state_dict(main_dict["optimizer_state_dict"])
+                best_loss = main_dict["best_loss"]
+                print("Previous model loaded successfully.")
+            except Exception as e:
+                print("Previous model found but could not be loaded, error: ", e)
 
     print("Using device:", device, flush=True)
 
