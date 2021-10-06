@@ -7,7 +7,9 @@ from pathlib import Path
 from GANDLF.compute import training_loop
 
 
-def TrainingManager(dataframe, outputDir, parameters, device, reset_prev, exit_on_split=False):
+def TrainingManager(
+    dataframe, outputDir, parameters, device, reset_prev, exit_on_split=False
+):
     """
     This is the training manager that ties all the training functionality together
 
@@ -223,7 +225,9 @@ def TrainingManager(dataframe, outputDir, parameters, device, reset_prev, exit_o
 
             # if exit_on_split has been defined, then don't call training loop
             if not exit_on_split:
-                if (not parameters["parallel_compute_command"]) or (singleFoldValidation):
+                if (not parameters["parallel_compute_command"]) or (
+                    singleFoldValidation
+                ):
                     # parallel_compute_command is an empty string, thus no parallel computing requested
                     training_loop(
                         training_data=trainingData,

@@ -166,8 +166,8 @@ def training_loop(
     params,
     output_dir,
     testing_data=None,
-    epochs = None,
-    model_restore_priority = "best",
+    epochs=None,
+    model_restore_priority="best",
 ):
     """
     The main training loop.
@@ -334,15 +334,18 @@ def training_loop(
         output_dir, params["model"]["architecture"] + "_best.pth.tar"
     )
 
-    all_model_paths = [os.path.join(
-        output_dir, params["model"]["architecture"] + "_" + model_restore_priority + ".pth.tar"
-    )
+    all_model_paths = [
+        os.path.join(
+            output_dir,
+            params["model"]["architecture"] + "_" + model_restore_priority + ".pth.tar",
+        )
     ]
     for model_restore_tag in model_restore_tags:
         all_model_paths.append(
             os.path.join(
-            output_dir, params["model"]["architecture"] + "_" + model_restore_tag + ".pth.tar"
-        )
+                output_dir,
+                params["model"]["architecture"] + "_" + model_restore_tag + ".pth.tar",
+            )
         )
 
     for model_path in all_model_paths:
