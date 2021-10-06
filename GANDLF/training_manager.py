@@ -7,15 +7,17 @@ from pathlib import Path
 from GANDLF.compute import training_loop
 
 
-def TrainingManager(dataframe, outputDir, parameters, device, reset_prev):
+def TrainingManager(dataframe, outputDir, parameters, device, reset_prev, exit_on_split=False):
     """
     This is the training manager that ties all the training functionality together
 
-    dataframe = full data from CSV
-    outputDir = the main output directory
-    parameters = parameters read from YAML
-    device = self-explanatory
-    reset_prev = whether the previous run in the same output directory is used or not
+    Args:
+        dataframe (pandas.DataFrame): The full data from CSV.
+        output_dir (str): The output directory.
+        parameters (dict): The parameters dictionary.
+        device (str): The device to perform computations on.
+        reset_prev (bool): Whether to reset the previous run.
+        exit_on_split (bool): Whether to exit after the split.
     """
     if reset_prev:
         shutil.rmtree(outputDir)
@@ -219,51 +221,52 @@ def TrainingManager(dataframe, outputDir, parameters, device, reset_prev):
             else:
                 validationData = pd.read_pickle(currentValidationDataPickle)
 
-            # parallel_compute_command is an empty string, thus no parallel computing requested
-            if (not parameters["parallel_compute_command"]) or (singleFoldValidation):
-                training_loop(
-                    training_data=trainingData,
-                    validation_data=validationData,
-                    output_dir=currentValOutputFolder,
-                    device=device,
-                    params=parameters,
-                    testing_data=testingData,
-                )
+            # if exit_on_split has been defined, then don't call training loop
+            if not exit_on_split:
+                if (not parameters["parallel_compute_command"]) or (singleFoldValidation):
+                    # parallel_compute_command is an empty string, thus no parallel computing requested
+                    training_loop(
+                        training_data=trainingData,
+                        validation_data=validationData,
+                        output_dir=currentValOutputFolder,
+                        device=device,
+                        params=parameters,
+                        testing_data=testingData,
+                    )
+                else:
+                    # call qsub here
+                    parallel_compute_command_actual = parameters[
+                        "parallel_compute_command"
+                    ].replace("${outputDir}", currentValOutputFolder)
 
-            else:
-                # call qsub here
-                parallel_compute_command_actual = parameters[
-                    "parallel_compute_command"
-                ].replace("${outputDir}", currentValOutputFolder)
+                    if not ("python" in parallel_compute_command_actual):
+                        sys.exit(
+                            "The 'parallel_compute_command_actual' needs to have the python from the virtual environment, which is usually '${GANDLF_dir}/venv/bin/python'"
+                        )
 
-                if not ("python" in parallel_compute_command_actual):
-                    sys.exit(
-                        "The 'parallel_compute_command_actual' needs to have the python from the virtual environment, which is usually '${GANDLF_dir}/venv/bin/python'"
+                    command = (
+                        parallel_compute_command_actual
+                        + " -m GANDLF.training_loop -train_loader_pickle "
+                        + currentTrainingDataPickle
+                        + " -val_loader_pickle "
+                        + currentValidationDataPickle
+                        + " -parameter_pickle "
+                        + currentModelConfigPickle
+                        + " -device "
+                        + str(device)
+                        + " -outputDir "
+                        + currentValOutputFolder
+                        + " -testing_loader_pickle "
+                        + currentTestingDataPickle
                     )
 
-                command = (
-                    parallel_compute_command_actual
-                    + " -m GANDLF.training_loop -train_loader_pickle "
-                    + currentTrainingDataPickle
-                    + " -val_loader_pickle "
-                    + currentValidationDataPickle
-                    + " -parameter_pickle "
-                    + currentModelConfigPickle
-                    + " -device "
-                    + str(device)
-                    + " -outputDir "
-                    + currentValOutputFolder
-                    + " -testing_loader_pickle "
-                    + currentTestingDataPickle
-                )
-
-                print(
-                    "Submitting job for testing split "
-                    + str(currentTestingFold)
-                    + " and validation split "
-                    + str(currentValidationFold)
-                )
-                subprocess.Popen(command, shell=True).wait()
+                    print(
+                        "Submitting job for testing split "
+                        + str(currentTestingFold)
+                        + " and validation split "
+                        + str(currentValidationFold)
+                    )
+                    subprocess.Popen(command, shell=True).wait()
 
             if singleFoldValidation:
                 break
