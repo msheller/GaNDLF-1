@@ -7,7 +7,7 @@ from pathlib import Path
 from GANDLF.compute import training_loop
 
 
-def TrainingManager(dataframe, outputDir, parameters, device, reset_prev):
+def TrainingManager(dataframe, outputDir, parameters, device, reset_prev, callbacks, epochs=None):
     """
     This is the training manager that ties all the training functionality together
 
@@ -16,6 +16,8 @@ def TrainingManager(dataframe, outputDir, parameters, device, reset_prev):
     parameters = parameters read from YAML
     device = self-explanatory
     reset_prev = whether the previous run in the same output directory is used or not
+    callbacks (dict): a dict of callables. Keys determine when a given callback is called.
+    epochs (int): The number of epochs to train; if None, take from params.
     """
     if reset_prev:
         shutil.rmtree(outputDir)
@@ -228,6 +230,8 @@ def TrainingManager(dataframe, outputDir, parameters, device, reset_prev):
                     device=device,
                     params=parameters,
                     testing_data=testingData,
+                    callbacks=callbacks,
+                    epochs=epochs
                 )
 
             else:
@@ -275,7 +279,7 @@ def TrainingManager(dataframe, outputDir, parameters, device, reset_prev):
 
 
 def TrainingManager_split(
-    dataframe_train, dataframe_validation, outputDir, parameters, device, reset_prev
+    dataframe_train, dataframe_validation, outputDir, parameters, device, reset_prev, callbacks, epochs
 ):
     """
     This is the training manager that ties all the training functionality together
@@ -286,6 +290,8 @@ def TrainingManager_split(
     parameters = parameters read from YAML
     device = self-explanatory
     reset_prev = whether the previous run in the same output directory is used or not
+    callbacks (dict): a dict of callables. Keys determine when a given callback is called.
+    epochs (int): The number of epochs to train; if None, take from params.
     """
     currentModelConfigPickle = os.path.join(outputDir, "parameters.pkl")
     if (not os.path.exists(currentModelConfigPickle)) or reset_prev:
@@ -305,4 +311,6 @@ def TrainingManager_split(
         device=device,
         params=parameters,
         testing_data=None,
+        callbacks=callbacks,
+        epochs=epochs
     )

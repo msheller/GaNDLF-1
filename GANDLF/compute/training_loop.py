@@ -167,6 +167,8 @@ def training_loop(
     output_dir,
     testing_data=None,
     epochs=None,
+    # model=None,
+    # callbacks={},
 ):
     """
     The main training loop.
@@ -179,6 +181,7 @@ def training_loop(
         output_dir (str): The output directory.
         testing_data (pandas.DataFrame): The data to use for testing.
         epochs (int): The number of epochs to train; if None, take from params.
+        callbacks (dict): a dict of callables. Keys determine when a given callback is called.
     """
     # Some autodetermined factors
     if epochs is None:
@@ -186,11 +189,23 @@ def training_loop(
     params["device"] = device
     params["output_dir"] = output_dir
 
+    # intialize our return values
+    epoch_train_loss = None
+    epoch_train_metric = None
+    epoch_valid_loss = None
+    epoch_valid_metric = None
+    model = None
+    optimizer = None
+    epoch = None
+    start_epoch = None
+    best_loss = None
+
     # Defining our model here according to parameters mentioned in the configuration file
     print("Number of channels : ", params["model"]["num_channels"])
 
     # Fetch the model according to params mentioned in the configuration file
-    model = global_models_dict[params["model"]["architecture"]](parameters=params)
+    if model is None:
+        model = global_models_dict[params["model"]["architecture"]](parameters=params)
 
     # Set up the dataloaders
     training_data_for_torch = ImagesFromDataFrame(training_data, params, train=True)
@@ -452,6 +467,17 @@ def training_loop(
         flush=True,
     )
 
+    return {
+        'epoch_train_loss': epoch_train_loss,
+        'epoch_train_metric': epoch_train_metric,
+        'epoch_valid_loss': epoch_valid_loss,
+        'epoch_valid_metric': epoch_valid_metric,
+        'model': model,
+        'optimizer': optimizer,
+        'epoch': epoch,
+        'start_epoch': start_epoch,
+        'best_loss': best_loss,
+    }
 
 if __name__ == "__main__":
 

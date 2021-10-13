@@ -7,7 +7,7 @@ from GANDLF.parseConfig import parseConfig
 from GANDLF.utils import populate_header_in_parameters, parseTrainingCSV
 
 
-def main_run(data_csv, config_file, output_dir, train_mode, device, reset_prev):
+def main_run(data_csv, config_file, output_dir, train_mode, device, reset_prev, callbacks, epochs):
     """
     Main function that runs the training and inference.
 
@@ -18,6 +18,8 @@ def main_run(data_csv, config_file, output_dir, train_mode, device, reset_prev):
         train_mode (bool): Whether to train or infer.
         device (str): The device type.
         reset_prev (bool): Whether the previous run will be reset or not.
+        callbacks (dict): a dict of callables. Keys determine when a given callback is called.
+        epochs (int): The number of epochs to train; if None, take from params.
 
     Raises:
         ValueError: Parameter check from previous run.
@@ -73,6 +75,8 @@ def main_run(data_csv, config_file, output_dir, train_mode, device, reset_prev):
             parameters=parameters,
             device=device,
             reset_prev=reset_prev,
+            callbacks=callbacks,
+            epochs=epochs,
         )
     else:
         data_full, headers = parseTrainingCSV(file_data_full, train=train_mode)
@@ -86,6 +90,8 @@ def main_run(data_csv, config_file, output_dir, train_mode, device, reset_prev):
             parameters=parameters,
             device=device,
             reset_prev=reset_prev,
+            callbacks=callbacks,
+            epochs=epochs,
         )
     else:
         InferenceManager(
