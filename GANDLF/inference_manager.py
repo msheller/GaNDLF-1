@@ -5,7 +5,7 @@ import torch
 import torch.nn.functional as F
 
 
-def InferenceManager(dataframe, outputDir, parameters, device):
+def InferenceManager(dataframe, outputDir, parameters, device, model=None):
     """
     This function takes in a dataframe, with some other parameters and performs the inference
     """
@@ -40,6 +40,7 @@ def InferenceManager(dataframe, outputDir, parameters, device):
             outputDir=fold_dir,
             device=device,
             parameters=parameters,
+            model=model
         )
 
         logits_dir = os.path.join(fold_dir, "logits.csv")

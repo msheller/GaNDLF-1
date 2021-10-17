@@ -7,7 +7,7 @@ from GANDLF.parseConfig import parseConfig
 from GANDLF.utils import populate_header_in_parameters, parseTrainingCSV
 
 
-def main_run(data_csv, config_file, output_dir, train_mode, device, reset_prev, callbacks, epochs):
+def main_run(data_csv, config_file, output_dir, train_mode, device, **kwargs):
     """
     Main function that runs the training and inference.
 
@@ -17,17 +17,18 @@ def main_run(data_csv, config_file, output_dir, train_mode, device, reset_prev, 
         output_dir (str): The output directory.
         train_mode (bool): Whether to train or infer.
         device (str): The device type.
-        reset_prev (bool): Whether the previous run will be reset or not.
-        callbacks (dict): a dict of callables. Keys determine when a given callback is called.
-        epochs (int): The number of epochs to train; if None, take from params.
+        kwargs : Key word arguments passed to TrainingManager, 
+                 or TrainingManager_split, or InferenceManager
 
     Raises:
         ValueError: Parameter check from previous run.
     """
+
+    # initialization
+    results_dict = None
+
     file_data_full = data_csv
-    model_parameters = config_file
-    device = device
-    parameters = parseConfig(model_parameters)
+    parameters = parseConfig(config_file)
     # in case the data being passed is already processed, check if the previous parameters exists,
     # and if it does, compare the two and if they are the same, ensure no preprocess is done.
     model_parameters_prev = os.path.join(
@@ -42,8 +43,6 @@ def main_run(data_csv, config_file, output_dir, train_mode, device, reset_prev, 
 
         parameters["data_preprocessing"] = {}
     parameters["output_dir"] = output_dir
-
-    reset_prev = reset_prev
 
     if "-1" in device:
         device = "cpu"
@@ -68,35 +67,38 @@ def main_run(data_csv, config_file, output_dir, train_mode, device, reset_prev, 
 
         parameters = populate_header_in_parameters(parameters, headers_train)
         # if we are here, it is assumed that the user wants to do training
-        TrainingManager_split(
-            dataframe_train=data_train,
-            dataframe_validation=data_validation,
-            outputDir=parameters["output_dir"],
-            parameters=parameters,
-            device=device,
-            reset_prev=reset_prev,
-            callbacks=callbacks,
-            epochs=epochs,
-        )
+        results_dict = TrainingManager_split(
+                           dataframe_train=data_train,
+                           dataframe_validation=data_validation,
+                           outputDir=parameters["output_dir"],
+                           parameters=parameters,
+                           device=device,
+                           **kwargs
+                       )
     else:
         data_full, headers = parseTrainingCSV(file_data_full, train=train_mode)
         parameters = populate_header_in_parameters(parameters, headers)
 
     # # start computation - either training or inference
     if train_mode:  # training mode
-        TrainingManager(
-            dataframe=data_full,
-            outputDir=parameters["output_dir"],
-            parameters=parameters,
-            device=device,
-            reset_prev=reset_prev,
-            callbacks=callbacks,
-            epochs=epochs,
-        )
+        if results_dict is not None:
+            raise RuntimeError('Two results_dicts were encountered with no logic to merge them.')
+        results_dict = TrainingManager(
+                           dataframe=data_full,
+                           outputDir=parameters["output_dir"],
+                           parameters=parameters,
+                           device=device,
+                           **kwargs
+                       )
     else:
-        InferenceManager(
-            dataframe=data_full,
-            outputDir=parameters["output_dir"],
-            parameters=parameters,
-            device=device,
-        )
+        if results_dict is not None:
+            raise RuntimeError('Two results_dict returns were encountered with no logic to merge them.')
+        results_dict = InferenceManager(
+                           dataframe=data_full,
+                           outputDir=parameters["output_dir"],
+                           parameters=parameters,
+                           device=device, 
+                           **kwargs
+                       )
+
+    return results_dict

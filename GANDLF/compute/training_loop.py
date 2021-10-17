@@ -155,7 +155,7 @@ def train_network(model, train_dataloader, optimizer, params):
             "     Epoch Final   Train " + metric + " : ",
             average_epoch_train_metric[metric],
         )
-
+# TODO: put here a return dict like one below?
     return average_epoch_train_loss, average_epoch_train_metric
 
 
@@ -167,8 +167,11 @@ def training_loop(
     output_dir,
     testing_data=None,
     epochs=None,
-    # model=None,
-    # callbacks={},
+    model=None,
+    optimizer=None,
+    # TODO: Double check, not including below as no saving to disk 
+    #start_epoch=0, 
+    #best_loss=np.inf
 ):
     """
     The main training loop.
@@ -181,7 +184,13 @@ def training_loop(
         output_dir (str): The output directory.
         testing_data (pandas.DataFrame): The data to use for testing.
         epochs (int): The number of epochs to train; if None, take from params.
-        callbacks (dict): a dict of callables. Keys determine when a given callback is called.
+        model (torch.nn.Module): used to initiate model 
+        (replaces initiation of model using one found on disk)
+        (note if this is None, so should start_epoch and best_loss)
+        optimizer (torch.optim.optimizer.Optimizer): used to initiate the optimizer 
+        (replaces inititation of optimizer via the configuration)
+        start_epoch: Epoch to that continued training should be considered starting at
+        best_loss: Best loss from previous training
     """
     # Some autodetermined factors
     if epochs is None:
@@ -189,23 +198,30 @@ def training_loop(
     params["device"] = device
     params["output_dir"] = output_dir
 
-    # intialize our return values
+    # check for inconsistencies with arguments
+    if model is None:
+        if (start_epoch is not None) or (best_loss is not None):
+            raise ValueError('\nCAUTION: Since model is None, values of start_epoch and best_loss should not be provided, but instead are inferred from the model checkpoint.\n')
+        if optimizer is not None:
+            raise ValueError('Optimizer object should not be provided since the model is not.')
+    else:
+        if (start_epoch is None) or (best_loss is None):
+            raise ValueError('Both start_epoch and best_loss need to be provided when model is provided.')
+
+    # intialize our return values 
     epoch_train_loss = None
     epoch_train_metric = None
     epoch_valid_loss = None
     epoch_valid_metric = None
-    model = None
-    optimizer = None
-    epoch = None
-    start_epoch = None
-    best_loss = None
-
+    
     # Defining our model here according to parameters mentioned in the configuration file
     print("Number of channels : ", params["model"]["num_channels"])
 
     # Fetch the model according to params mentioned in the configuration file
     if model is None:
+        # already sanity check (above) that optimizer is None in this case
         model = global_models_dict[params["model"]["architecture"]](parameters=params)
+        optimizer = global_optimizer_dict[params["optimizer"]["type"]](params)
 
     # Set up the dataloaders
     training_data_for_torch = ImagesFromDataFrame(training_data, params, train=True)
@@ -247,9 +263,8 @@ def training_loop(
     # Getting the channels for training and removing all the non numeric entries from the channels
     params = populate_channel_keys_in_params(validation_data_for_torch, params)
 
-    # Fetch the optimizers
+    # Store model weights and optimizer object in params dict
     params["model_parameters"] = model.parameters()
-    optimizer = global_optimizer_dict[params["optimizer"]["type"]](params)
     params["optimizer_object"] = optimizer
 
     if not ("step_size" in params["scheduler"]):
@@ -332,26 +347,29 @@ def training_loop(
         )
         params["medcam_enabled"] = False
 
+
     # Setup a few variables for tracking
-    best_loss = 1e7
-    patience, start_epoch = 0, 0
-    first_model_saved = False
     best_model_path = os.path.join(
         output_dir, params["model"]["architecture"] + "_best.pth.tar"
     )
+    # intitializations
+    patience = 0
 
-    # if previous model file is present, load it up
-    if os.path.exists(best_model_path):
-        print("Previous model found. Loading it up.")
-        try:
-            main_dict = torch.load(best_model_path)
-            model.load_state_dict(main_dict["model_state_dict"])
-            start_epoch = main_dict["epoch"]
-            optimizer.load_state_dict(main_dict["optimizer_state_dict"])
-            best_loss = main_dict["best_loss"]
-            print("Previous model loaded successfully.")
-        except Exception as e:
-            print("Previous model could not be loaded, error: ", e)
+    # TODO: Merge in the changes (below) Sarthak has to allow for previous model rather than best
+    # Make sure there is still a way to get best_loss
+    if model is None:
+        # if previous model file is present, load it up
+        if os.path.exists(best_model_path):
+            print("Previous model found. Loading it up.")
+            try:
+                main_dict = torch.load(best_model_path)
+                model.load_state_dict(main_dict["model_state_dict"])
+                start_epoch = main_dict["epoch"]
+                optimizer.load_state_dict(main_dict["optimizer_state_dict"])
+                best_loss = main_dict["best_loss"]
+                print("Previous model loaded successfully.")
+            except Exception as e:
+                print("Previous model could not be loaded, error: ", e)
 
     print("Using device:", device, flush=True)
 
@@ -433,8 +451,8 @@ def training_loop(
             flush=True,
         )
 
-        # Start to check for loss
-        if not (first_model_saved) or (epoch_valid_loss <= torch.tensor(best_loss)):
+        # writing model to file if best
+        if epoch_valid_loss <= torch.tensor(best_loss):
             best_loss = epoch_valid_loss
             best_train_idx = epoch
             patience = 0
@@ -447,15 +465,28 @@ def training_loop(
                 },
                 best_model_path,
             )
-            first_model_saved = True
-
+            
         if patience > params["patience"]:
             print(
                 "Performance Metric has not improved for %d epochs, exiting training loop!"
                 % (patience),
                 flush=True,
             )
-            break
+            return {'scores': 
+                        {
+                         'epoch_train_loss': epoch_train_loss,
+                         'epoch_train_metric': epoch_train_metric,
+                         'epoch_valid_loss': epoch_valid_loss,
+                         'epoch_valid_metric': epoch_valid_metric
+                         },
+                    'state': 
+                        {
+                        'model': model,
+                        'optimizer': optimizer,
+                        'last_epoch': epoch,
+                        'best_loss': best_loss,
+                        }
+                   }
 
     # End train time
     end_time = time.time()
@@ -467,17 +498,22 @@ def training_loop(
         flush=True,
     )
 
-    return {
-        'epoch_train_loss': epoch_train_loss,
-        'epoch_train_metric': epoch_train_metric,
-        'epoch_valid_loss': epoch_valid_loss,
-        'epoch_valid_metric': epoch_valid_metric,
-        'model': model,
-        'optimizer': optimizer,
-        'epoch': epoch,
-        'start_epoch': start_epoch,
-        'best_loss': best_loss,
-    }
+    return {'scores': 
+                        {
+                         'epoch_train_loss': epoch_train_loss,
+                         'epoch_train_metric': epoch_train_metric,
+                         'epoch_valid_loss': epoch_valid_loss,
+                         'epoch_valid_metric': epoch_valid_metric
+                         },
+                    'state': 
+                        {
+                        'model': model,
+                        'optimizer': optimizer,
+                        'epoch': epoch,
+                        'start_epoch': start_epoch,
+                        'best_loss': best_loss,
+                        }
+            }
 
 if __name__ == "__main__":
 

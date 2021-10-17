@@ -7,7 +7,7 @@ from pathlib import Path
 from GANDLF.compute import training_loop
 
 
-def TrainingManager(dataframe, outputDir, parameters, device, reset_prev, callbacks, epochs=None):
+def TrainingManager(dataframe, outputDir, parameters, device, reset_prev, **kwargs):
     """
     This is the training manager that ties all the training functionality together
 
@@ -16,9 +16,9 @@ def TrainingManager(dataframe, outputDir, parameters, device, reset_prev, callba
     parameters = parameters read from YAML
     device = self-explanatory
     reset_prev = whether the previous run in the same output directory is used or not
-    callbacks (dict): a dict of callables. Keys determine when a given callback is called.
-    epochs (int): The number of epochs to train; if None, take from params.
+    kwargs = additional key word arguments passed to training_loop
     """
+
     if reset_prev:
         shutil.rmtree(outputDir)
         Path(outputDir).mkdir(parents=True, exist_ok=True)
@@ -223,16 +223,15 @@ def TrainingManager(dataframe, outputDir, parameters, device, reset_prev, callba
 
             # parallel_compute_command is an empty string, thus no parallel computing requested
             if (not parameters["parallel_compute_command"]) or (singleFoldValidation):
-                training_loop(
-                    training_data=trainingData,
-                    validation_data=validationData,
-                    output_dir=currentValOutputFolder,
-                    device=device,
-                    params=parameters,
-                    testing_data=testingData,
-                    callbacks=callbacks,
-                    epochs=epochs
-                )
+                return  training_loop(
+                            training_data=trainingData,
+                            validation_data=validationData,
+                            output_dir=currentValOutputFolder,
+                            device=device,
+                            params=parameters,
+                            testing_data=testingData,
+                            **kwargs
+                        )
 
             else:
                 # call qsub here
@@ -278,21 +277,16 @@ def TrainingManager(dataframe, outputDir, parameters, device, reset_prev, callba
         currentTestingFold += 1  # go to next fold
 
 
-def TrainingManager_split(
-    dataframe_train, dataframe_validation, outputDir, parameters, device, reset_prev, callbacks, epochs
-):
+def TrainingManager_split(outputDir, parameters, reset_prev, **kwargs):
     """
     This is the training manager that ties all the training functionality together
 
-    dataframe_train = training data from CSV
-    dataframe_validation = validation data from CSV
     outputDir = the main output directory
     parameters = parameters read from YAML
-    device = self-explanatory
     reset_prev = whether the previous run in the same output directory is used or not
-    callbacks (dict): a dict of callables. Keys determine when a given callback is called.
-    epochs (int): The number of epochs to train; if None, take from params.
+    kwargs: additional key word arguments passed to training_loop.
     """
+
     currentModelConfigPickle = os.path.join(outputDir, "parameters.pkl")
     if (not os.path.exists(currentModelConfigPickle)) or reset_prev:
         with open(currentModelConfigPickle, "wb") as handle:
@@ -304,13 +298,8 @@ def TrainingManager_split(
             flush=True,
         )
         parameters = pickle.load(open(currentModelConfigPickle, "rb"))
-    training_loop(
-        training_data=dataframe_train,
-        validation_data=dataframe_validation,
-        output_dir=outputDir,
-        device=device,
-        params=parameters,
-        testing_data=None,
-        callbacks=callbacks,
-        epochs=epochs
-    )
+    return training_loop(
+               output_dir=outputDir,
+               params=parameters,
+               **kwargs
+           )
