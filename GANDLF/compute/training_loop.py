@@ -155,7 +155,6 @@ def train_network(model, train_dataloader, optimizer, params):
             "     Epoch Final   Train " + metric + " : ",
             average_epoch_train_metric[metric],
         )
-# TODO: put here a return dict like one below?
     return average_epoch_train_loss, average_epoch_train_metric
 
 
@@ -168,29 +167,36 @@ def training_loop(
     testing_data=None,
     epochs=None,
     model=None,
-    optimizer=None,
-    # TODO: Double check, not including below as no saving to disk 
-    #start_epoch=0, 
-    #best_loss=np.inf
+    start_epoch=None,
+    best_loss=None,
+    optimizer=None, 
+    do_train=True,
+    do_val=True,
+    do_test=True
 ):
     """
     The main training loop.
 
     Args:
-        training_data (pandas.DataFrame): The data to use for training.
-        validation_data (pandas.DataFrame): The data to use for validation.
-        device (str): The device to perform computations on.
-        params (dict): The parameters dictionary.
-        output_dir (str): The output directory.
-        testing_data (pandas.DataFrame): The data to use for testing.
-        epochs (int): The number of epochs to train; if None, take from params.
-        model (torch.nn.Module): used to initiate model 
-        (replaces initiation of model using one found on disk)
-        (note if this is None, so should start_epoch and best_loss)
-        optimizer (torch.optim.optimizer.Optimizer): used to initiate the optimizer 
-        (replaces inititation of optimizer via the configuration)
-        start_epoch: Epoch to that continued training should be considered starting at
-        best_loss: Best loss from previous training
+        training_data (pandas.DataFrame)    : The data to use for training.
+        validation_data (pandas.DataFrame)  : The data to use for validation.
+        device (str)                        : The device to perform computations on.
+        params (dict)                       : The parameters dictionary.
+        output_dir (str)                    : The output directory.
+        testing_data (pandas.DataFrame)     : The data to use for testing.
+        epochs (int)                        : The number of epochs to train; if None, take from params.
+        model (torch.nn.Module)             : used to initiate model 
+                                            (replaces initiation of model using one found on disk)
+                                            (note if this is None, so should start_epoch and best_loss)
+                                            optimizer (torch.optim.optimizer.Optimizer) : used to initiate the 
+                                            optimizer (replaces inititation of optimizer via the configuration)
+        start_epoch                         : Starting epoch for training (used for scheduler, and to increment 
+                                            appropriately for recording in model checkpoint)
+        best_loss                           : Best validation loss seen so far in the model 
+                                            (used for model selection and proper recording to checkpoint)
+        do_train                            : Allow the model to train (otherwise skip)
+        do_val                              : Allow the model to validate (otherwise skip)
+        do_test                             : Allow the model to test (otherwise skip) 
     """
     # Some autodetermined factors
     if epochs is None:
@@ -198,30 +204,32 @@ def training_loop(
     params["device"] = device
     params["output_dir"] = output_dir
 
-    # check for inconsistencies with arguments
-    if model is None:
-        if (start_epoch is not None) or (best_loss is not None):
-            raise ValueError('\nCAUTION: Since model is None, values of start_epoch and best_loss should not be provided, but instead are inferred from the model checkpoint.\n')
-        if optimizer is not None:
-            raise ValueError('Optimizer object should not be provided since the model is not.')
-    else:
-        if (start_epoch is None) or (best_loss is None):
-            raise ValueError('Both start_epoch and best_loss need to be provided when model is provided.')
-
-    # intialize our return values 
+    # intialize most return values (except end_epoch which is initialized only after start_epoch is done changing) 
     epoch_train_loss = None
     epoch_train_metric = None
     epoch_valid_loss = None
     epoch_valid_metric = None
-    
-    # Defining our model here according to parameters mentioned in the configuration file
-    print("Number of channels : ", params["model"]["num_channels"])
+    epoch_test_loss = None
+    epoch_test_metric = None
+    best_loss = None
 
-    # Fetch the model according to params mentioned in the configuration file
+    model_info_tracked_on_disk = False
     if model is None:
+        model_info_tracked_on_disk = True
+
+    if model_info_tracked_on_disk:
+        if optimizer is not None:
+            raise ValueError('If model is None, we do not expect an optimizer.')
+
+        # Defining our model here according to parameters mentioned in the configuration file
+        print("Number of channels : ", params["model"]["num_channels"])
+
         # already sanity check (above) that optimizer is None in this case
         model = global_models_dict[params["model"]["architecture"]](parameters=params)
         optimizer = global_optimizer_dict[params["optimizer"]["type"]](params)
+    else:
+        if optimizer is None:
+            raise ValueError('If model is not None, optimizer should not be either.')
 
     # Set up the dataloaders
     training_data_for_torch = ImagesFromDataFrame(training_data, params, train=True)
@@ -232,7 +240,6 @@ def training_loop(
 
     testingDataDefined = True
     if testing_data is None:
-        # testing_data = validation_data
         testingDataDefined = False
 
     if testingDataDefined:
@@ -349,15 +356,18 @@ def training_loop(
 
 
     # Setup a few variables for tracking
+    patience = 0
+    first_model_saved = False
     best_model_path = os.path.join(
         output_dir, params["model"]["architecture"] + "_best.pth.tar"
     )
-    # intitializations
-    patience = 0
-
-    # TODO: Merge in the changes (below) Sarthak has to allow for previous model rather than best
+    
+    # TODO: Merge (maybe manually) in the changes (below) Sarthak has to allow for previous model rather than best
     # Make sure there is still a way to get best_loss
-    if model is None:
+    if model_info_tracked_on_disk:
+        if (start_epoch is not None) or (best_loss is not None):
+            raise ValueError('None model passed to train_loop should not coincide with specification of start_epoch or best_loss.')
+
         # if previous model file is present, load it up
         if os.path.exists(best_model_path):
             print("Previous model found. Loading it up.")
@@ -370,9 +380,17 @@ def training_loop(
                 print("Previous model loaded successfully.")
             except Exception as e:
                 print("Previous model could not be loaded, error: ", e)
+        
+    if start_epoch is None:
+        start_epoch = 0
+    if best_loss is None:
+        best_loss = 1e7
+
+    # intialize another return value
+    end_epoch = start_epoch - 1
 
     print("Using device:", device, flush=True)
-
+WORKING HERE
     # Iterate for number of epochs
     for epoch in range(start_epoch, epochs):
 
@@ -417,18 +435,23 @@ def training_loop(
             file_mem.write(outputToWrite_mem)
             file_mem.close()
 
-        # Printing times
-        epoch_start_time = time.time()
-        print("*" * 20)
-        print("Starting Epoch : ", epoch)
-        print("Epoch start time : ", get_date_time())
+        if do_train:
+            # Printing times
+            epoch_start_time = time.time()
+            print("*" * 20)
+            print("Starting Epoch : ", epoch)
+            print("Epoch start time : ", get_date_time())
 
-        epoch_train_loss, epoch_train_metric = train_network(
-            model, train_dataloader, optimizer, params
-        )
-        epoch_valid_loss, epoch_valid_metric = validate_network(
+            epoch_train_loss, epoch_train_metric = train_network(
+                model, train_dataloader, optimizer, params
+            )
+            # increment the end_epoch to account for training
+            end_epoch = end_epoch + 1
+        
+        if do_val:
+            epoch_valid_loss, epoch_valid_metric = validate_network(
             model, val_dataloader, scheduler, params, epoch, mode="validation"
-        )
+            )
 
         patience += 1
 
@@ -436,7 +459,7 @@ def training_loop(
         train_logger.write(epoch, epoch_train_loss, epoch_train_metric)
         valid_logger.write(epoch, epoch_valid_loss, epoch_valid_metric)
 
-        if testingDataDefined:
+        if testingDataDefined and do_test:
             epoch_test_loss, epoch_test_metric = validate_network(
                 model, test_dataloader, scheduler, params, epoch, mode="testing"
             )
@@ -451,20 +474,24 @@ def training_loop(
             flush=True,
         )
 
-        # writing model to file if best
-        if epoch_valid_loss <= torch.tensor(best_loss):
-            best_loss = epoch_valid_loss
-            best_train_idx = epoch
-            patience = 0
-            torch.save(
-                {
-                    "epoch": best_train_idx,
-                    "model_state_dict": model.state_dict(),
-                    "optimizer_state_dict": optimizer.state_dict(),
-                    "best_loss": best_loss,
-                },
-                best_model_path,
-            )
+        # writing model to file if tracking model on disk and it is the best seen so far
+        if epoch_valid_loss is not None:
+            if epoch_valid_loss <= torch.tensor(best_loss):
+                # if we have not trained, we figure out if we got model from disk
+                # or not, then either let best_train_indx be
+                #TODO: Above running into state issues, wanting epoch from TF model (will use a stand-in?)
+                best_loss = epoch_valid_loss
+                best_train_idx = epoch
+                patience = 0
+                torch.save(
+                    {
+                        "epoch": best_train_idx,
+                        "model_state_dict": model.state_dict(),
+                        "optimizer_state_dict": optimizer.state_dict(),
+                        "best_loss": best_loss,
+                    },
+                    best_model_path,
+                )
             
         if patience > params["patience"]:
             print(
@@ -477,14 +504,16 @@ def training_loop(
                          'epoch_train_loss': epoch_train_loss,
                          'epoch_train_metric': epoch_train_metric,
                          'epoch_valid_loss': epoch_valid_loss,
-                         'epoch_valid_metric': epoch_valid_metric
+                         'epoch_valid_metric': epoch_valid_metric, 
+                         'epoch_test_loss': epoch_test_loss, 
+                         'epoch_test_metric': epoch_test_metric
                          },
                     'state': 
                         {
                         'model': model,
                         'optimizer': optimizer,
-                        'last_epoch': epoch,
-                        'best_loss': best_loss,
+                        'end_epoch': end_epoch, 
+                        'best_loss': best_loss
                         }
                    }
 
@@ -499,20 +528,21 @@ def training_loop(
     )
 
     return {'scores': 
-                        {
-                         'epoch_train_loss': epoch_train_loss,
-                         'epoch_train_metric': epoch_train_metric,
-                         'epoch_valid_loss': epoch_valid_loss,
-                         'epoch_valid_metric': epoch_valid_metric
-                         },
-                    'state': 
-                        {
-                        'model': model,
-                        'optimizer': optimizer,
-                        'epoch': epoch,
-                        'start_epoch': start_epoch,
-                        'best_loss': best_loss,
-                        }
+                {
+                 'epoch_train_loss': epoch_train_loss,
+                 'epoch_train_metric': epoch_train_metric,
+                 'epoch_valid_loss': epoch_valid_loss,
+                 'epoch_valid_metric': epoch_valid_metric, 
+                 'epoch_test_loss': epoch_test_loss, 
+                 'epoch_test_metric': epoch_test_metric
+                },
+            'state': 
+                {
+                 'model': model,
+                 'optimizer': optimizer,
+                 'end_epoch': end_epoch, 
+                 'best_loss': best_loss
+                }
             }
 
 if __name__ == "__main__":

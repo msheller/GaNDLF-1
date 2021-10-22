@@ -23,6 +23,9 @@ def TrainingManager(dataframe, outputDir, parameters, device, reset_prev, **kwar
         shutil.rmtree(outputDir)
         Path(outputDir).mkdir(parents=True, exist_ok=True)
 
+    # initialize the list of return dictionaries from inner calls to training_loop
+    return_dicts = []
+
     # save the current model configuration as a sanity check
     currentModelConfigPickle = os.path.join(outputDir, "parameters.pkl")
     if (not os.path.exists(currentModelConfigPickle)) or reset_prev:
@@ -74,7 +77,7 @@ def TrainingManager(dataframe, outputDir, parameters, device, reset_prev, **kwar
         .tolist()
     )
 
-    # get the indeces for kfold splitting
+    # get the indices for kfold splitting
     trainingData_full = dataframe
 
     # start the kFold train for testing
@@ -223,15 +226,17 @@ def TrainingManager(dataframe, outputDir, parameters, device, reset_prev, **kwar
 
             # parallel_compute_command is an empty string, thus no parallel computing requested
             if (not parameters["parallel_compute_command"]) or (singleFoldValidation):
-                return  training_loop(
-                            training_data=trainingData,
-                            validation_data=validationData,
-                            output_dir=currentValOutputFolder,
-                            device=device,
-                            params=parameters,
-                            testing_data=testingData,
-                            **kwargs
-                        )
+                return_dicts.append(training_loop(
+                                        training_data=trainingData,
+                                        validation_data=validationData,
+                                        output_dir=currentValOutputFolder,
+                                        device=device,
+                                        params=parameters,
+                                        testing_data=testingData,
+                                        **kwargs
+                                    )
+                                   )
+                # TODO: Now extract the information needed to track best result and locate model later
 
             else:
                 # call qsub here
