@@ -157,6 +157,10 @@ def train_network(model, train_dataloader, optimizer, params):
         )
     return average_epoch_train_loss, average_epoch_train_metric
 
+# TODO: epochs below actually defines the last epoch to train on (specifically epochs-1) 
+# rather than being the number of epochs to train on as is documented below. 
+# Change the docs (not code)? 
+
 
 def training_loop(
     training_data,
@@ -390,7 +394,11 @@ def training_loop(
     end_epoch = start_epoch - 1
 
     print("Using device:", device, flush=True)
-WORKING HERE
+
+    # It does not make sense to iterate over more than one epoch if not training. Model will not change.
+    if (not do_train) and (epochs - start_epoch > 1):
+        raise ValueError('Model is not set to train, yet mutiple epochs are set to iterate.')
+
     # Iterate for number of epochs
     for epoch in range(start_epoch, epochs):
 
@@ -475,7 +483,7 @@ WORKING HERE
         )
 
         # writing model to file if tracking model on disk and it is the best seen so far
-        if epoch_valid_loss is not None:
+        if (epoch_valid_loss is not None) and model_info_tracked_on_disk:
             if epoch_valid_loss <= torch.tensor(best_loss):
                 # if we have not trained, we figure out if we got model from disk
                 # or not, then either let best_train_indx be

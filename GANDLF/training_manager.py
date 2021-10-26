@@ -7,7 +7,7 @@ from pathlib import Path
 from GANDLF.compute import training_loop
 
 
-def TrainingManager(dataframe, outputDir, parameters, device, reset_prev, **kwargs):
+def TrainingManager(dataframe, outputDir, parameters, device, reset_prev, crossfold_val_n=None, crossfold_test_n=None, **kwargs):
     """
     This is the training manager that ties all the training functionality together
 
@@ -43,6 +43,14 @@ def TrainingManager(dataframe, outputDir, parameters, device, reset_prev, **kwar
     singleFoldValidation = False
     singleFoldTesting = False
     noTestingData = False
+
+    #TODO: Do we like this solution?
+    # override cross-fold config if requested
+    if crossfold_val_n is not None:
+        parameters["nested_training"]["validation"] = crossfold_val_n
+    if crossfold_test_n is not None:
+        parameters["nested_training"]["testing"] = crossfold_test_n
+
     # if the user wants a single fold training
     if parameters["nested_training"]["testing"] < 0:
         parameters["nested_training"]["testing"] = abs(
